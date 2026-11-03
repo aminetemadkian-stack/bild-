@@ -34,7 +34,6 @@ def get_run(run_id):
         row=db.execute("SELECT payload FROM runs WHERE id=?",(run_id,)).fetchone()
     return json.loads(row["payload"]) if row else None
 
-
 def cleanup_chat_history(now=None):
     """Delete expired chat rows. `now` is injectable to make expiry tests deterministic."""
     from datetime import datetime, timezone
@@ -52,7 +51,6 @@ def save_chat_exchange(user_text: str, assistant_text: str, retention_days: int,
             ("user", user_text[:20000], now.isoformat(), expires.isoformat()),
             ("assistant", assistant_text[:20000], now.isoformat(), expires.isoformat())
         ])
-        # Bound storage even if settings change or the cleanup loop has been offline.
         db.execute("DELETE FROM chat_history WHERE id NOT IN (SELECT id FROM chat_history ORDER BY id DESC LIMIT 500)")
 
 def list_chat_history(limit: int = 200, now=None):
@@ -66,7 +64,7 @@ def clear_chat_history():
         cur=db.execute("DELETE FROM chat_history")
         return cur.rowcount
 
-def delete_message(message_id: int) -> bool:
+def delete_chat_message(message_id: int) -> bool:
     with connect() as db:
         cur = db.execute("DELETE FROM chat_history WHERE id = ?", (message_id,))
         return cur.rowcount > 0
