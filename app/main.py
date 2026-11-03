@@ -1,16 +1,36 @@
-from fastapi import FastAPI
+import asyncio
+from contextlib import suppress
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from app.api.routes import router
 from app.api.extra_routes import extra_router
 from app.core.config import settings
 from app.services.storage import init_db, cleanup_chat_history
-import asyncio
-from contextlib import suppress
 
 app = FastAPI(title=settings.app_name, version="0.1.0", description="Conceptual multi-agent architectural design assistant. Not for construction use.")
 app.include_router(router, prefix="/api/v1")
 app.include_router(extra_router, prefix="/api/v1")
+
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+LOCAL_ORIGIN_PREFIXES = ("http://127.0.0.1:", "http://localhost:", "http://[::1]:")
+
+def _host_name(raw_host: str) -> str:
+    if raw_host.startswith("["):
+        return raw_host[1:raw_host.find("]")] if "]" in raw_host else raw_host
+    return raw_host.split(":")[0]
+
+@app.middleware("http")
+async def local_only_guard(request: Request, call_next):
+    # DNS-rebinding guard: only requests addressed to this machine are served.
+    if _host_name(request.headers.get("host", "")) not in LOCAL_HOSTS:
+        return JSONResponse({"detail": "Forbidden host."}, status_code=403)
+    # Cross-site guard: a page from another site cannot drive the local API,
+    # even though a plain multipart form POST would otherwise reach /chat.
+    origin = request.headers.get("origin")
+    if origin is not None and not origin.startswith(LOCAL_ORIGIN_PREFIXES):
+        return JSONResponse({"detail": "Cross-origin request blocked."}, status_code=403)
+    return await call_next(request)
 
 _cleanup_task = None
 
